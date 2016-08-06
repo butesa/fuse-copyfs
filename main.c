@@ -20,46 +20,7 @@
 #include "cache.h"
 #include "create.h"
 
-char *rcs_version_path = "/home/widan/versions";
-
-void rcs_free_metadata(metadata_t *metadata)
-{
-  version_t *version, *next;
-
-  version = metadata->md_versions;
-  while (version)
-    {
-      next = version->v_next;
-      free(version->v_rfile);
-      free(version);
-      version = next;
-    }
-  if (metadata->md_vpath)
-    helper_free_array(metadata->md_vpath);
-  free(metadata->md_vfile);
-  free(metadata);
-}
-
-#if 0
-void set_config()
-{
-  gl_config = getenv("CPYFS_MIRROR");
-  if (gl_config.mirrored_dir == NULL) {
-    gl_config.mirrored_dir = "/var";
-  }
-  gl_config.backup_dir = getenv("CPYFS_BACKDIR");
-  if (gl_config.backup_dir == NULL) {
-    gl_config.backup_dir = "/tmp";
-  }
-}
-
-int main(int argc, char *argv[])
-{
-    fuse_main(argc, argv, &callback_oper);
-    return 0;
-}
-#endif
-
+char *rcs_version_path;
 
 extern struct fuse_operations callback_oper;
 

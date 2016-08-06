@@ -23,31 +23,6 @@
 #include "cache.h"
 
 /*
- * frees metadata, I guess.. Stolen from main.c...
- * This should go into some other .c file, but I'll be damned
- * if I can decide which one...
- * 	--M@
- */
-void free_metadata(metadata_t *metadata)
-{
-  version_t *version, *next;
-
-  version = metadata->md_versions;
-  
-  while (version)
-    {
-      next = version->v_next;
-      free(version->v_rfile);
-      free(version);
-      version = next;
-    }
-  if (metadata->md_vpath)
-    helper_free_array(metadata->md_vpath);
-  free(metadata->md_vfile);
-  free(metadata);
-}
-
-/*
  * We support extended attributes to allow user-space scripts to manipulate
  * the file system state, such as forcing a specific version to appear, ...
  *
@@ -174,7 +149,7 @@ int callback_setxattr(const char *path, const char *name, const char *value,
   		if(metadata->md_versions == NULL) {
   			// Free the metadata from cache
   			cache_drop_metadata(metadata->md_vfile);
-  			free_metadata(metadata);
+  			rcs_free_metadata(metadata);
   			// kill the metadata file too.. SCARY!!!
   			unlink(mdfile);
   			

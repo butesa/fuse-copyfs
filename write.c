@@ -29,11 +29,7 @@ static int write_metadata_file_worker(FILE *fh, version_t *version)
       return -1;
 
   /* Strip the path */
-  name = rindex(version->v_rfile, '/');
-  if (!name)
-    name = version->v_rfile;
-  else
-    name++;
+  name = helper_extract_filename(version->v_rfile);
 
   /* Write this version's information */
   if (fprintf(fh, "%i:%i:%04o:%i:%i:%s\n", version->v_vid, version->v_svid,

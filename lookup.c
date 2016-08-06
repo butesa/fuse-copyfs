@@ -261,3 +261,21 @@ metadata_t *rcs_translate_to_metadata(const char *vfile, char *vroot)
    */
   return cache_get_metadata(vfile);
 }
+
+void rcs_free_metadata(metadata_t *metadata)
+{
+  version_t *version, *next;
+
+  version = metadata->md_versions;
+  while (version)
+    {
+      next = version->v_next;
+      free(version->v_rfile);
+      free(version);
+      version = next;
+    }
+  if (metadata->md_vpath)
+    helper_free_array(metadata->md_vpath);
+  free(metadata->md_vfile);
+  free(metadata);
+}

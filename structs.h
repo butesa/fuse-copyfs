@@ -50,7 +50,6 @@ struct				metadata_t
 
 struct				bucket_t
 {
-  unsigned int			b_count;	/* Item count		*/
   metadata_t			*b_contents;	/* Metadata chain	*/
 };
 

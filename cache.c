@@ -30,7 +30,6 @@ void cache_initialize(void)
   /* Initialize the buckets */
   for (i = 0; i < CACHE_HASH_BUCKETS; i++)
     {
-      cache_hash_table[i].b_count = 0;
       cache_hash_table[i].b_contents = NULL;
     }
 
@@ -56,7 +55,6 @@ void cache_finalize(void)
 	  rcs_free_metadata(metadata);
 	  metadata = next;
 	}
-      cache_hash_table[i].b_count = 0;
       cache_hash_table[i].b_contents = NULL;
     }
 }
@@ -136,7 +134,6 @@ void cache_add_metadata(metadata_t *metadata)
 
   /* Bump the bucket's item counter, and the global counter */
   cache_item_count++;
-  bucket->b_count++;
 }
 
 /*
