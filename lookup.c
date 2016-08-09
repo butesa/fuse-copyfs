@@ -162,8 +162,8 @@ char *rcs_translate_path(const char *virtual, char *vroot)
 	  return safe_strdup(version->v_rfile);
 	}
 
-      metafile = helper_build_composite("SS", "/", vroot, "metadata.");
-      dflfile = helper_build_composite("SS", "/", vroot, "dfl-meta.");
+      metafile = helper_build_composite("SS", "/", vroot, METADATA_PREFIX);
+      dflfile = helper_build_composite("SS", "/", vroot, DFL_VERSION_PREFIX);
 
       /* The root HAS to have metadata */
       metadata = parse_metadata_file(metafile);

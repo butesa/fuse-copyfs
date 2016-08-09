@@ -11,6 +11,9 @@
 
 # include "structs.h"
 
+#define METADATA_PREFIX "metadata."
+#define DFL_VERSION_PREFIX "dfl-meta."
+
 extern char	*rcs_version_path;
 extern int	rcs_ignore_deleted;
 

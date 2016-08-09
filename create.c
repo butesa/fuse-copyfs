@@ -24,6 +24,8 @@
 #include "create.h"
 #include "cache.h"
 
+#define TIME_LIMIT 1
+
 /*
  * Build a version file name with the given serial for the given virtual file.
  */
@@ -52,26 +54,6 @@ static char *create_version_name(const char *vpath, int serial)
 }
 
 /*
- * Build a metadata file name with the given virtual file and prefix.
- * prefix is "metadata" for metadata file and "dfl-meta" for default file.
- */
-char *create_meta_name(char *vpath, char *prefix)
-{
-  char *dir, *file, *xlat, *name, *res;
-
-  dir = helper_extract_dirname(vpath);
-  file = helper_extract_filename(vpath);
-  xlat = rcs_translate_path(dir, rcs_version_path);
-  name = helper_build_composite("SS", ".", prefix, file);
-  res = helper_build_composite("SS", "/", xlat, name);
-  free(xlat);
-  free(name);
-  free(file);
-  free(dir);
-  return res;
-}
-
-/*
  * Link a version to a metadata structure, and flush changes to disk. It will
  * only link the version in memory if the changes were successfully committed
  * to disk first.
@@ -82,8 +64,8 @@ static int create_link_version(metadata_t *metadata, version_t *version)
   int old_vid, old_svid, old_deleted;
 
   /* Build the path for the metadata and default files */
-  metafile = create_meta_name(metadata->md_vfile, "metadata");
-  dflfile = create_meta_name(metadata->md_vfile, "dfl-meta");
+  metafile = helper_build_meta_name(metadata->md_vfile, METADATA_PREFIX);
+  dflfile = helper_build_meta_name(metadata->md_vfile, DFL_VERSION_PREFIX);
 
   /* Link in memory */
   version->v_next = metadata->md_versions;
@@ -119,13 +101,16 @@ static int create_link_version(metadata_t *metadata, version_t *version)
   return 0;
 }
 
-#define TIME_LIMIT 1
-
 /*
  * Create a new version or subversion of a file. This is a generic interface.
  * If subversion is set, it will create a subversion with the given attributes.
  * Else it will create a version. It won't work for initial version creation.
  */
+#define COPY_YES 1
+#define COPY_NO 0
+#define SUBVERSION_YES 1
+#define SUBVERSION_NO 0
+
 static int create_new_version_generic(const char *vpath, int subversion,
 				      int do_copy, mode_t mode, uid_t uid,
 				      gid_t gid)
@@ -235,7 +220,7 @@ static int create_new_metadata(const char *vpath, char *rpath, mode_t mode, uid_
   version->v_rfile = rpath;
   version->v_next = NULL;
   cache_add_metadata(metadata);
-  metafile = create_meta_name(metadata->md_vfile, "metadata");
+  metafile = helper_build_meta_name(metadata->md_vfile, METADATA_PREFIX);
   res = write_metadata_file(metafile, metadata);
   free(metafile);
   return res;
@@ -249,7 +234,7 @@ static int create_new_metadata(const char *vpath, char *rpath, mode_t mode, uid_
  */
 int create_new_version(const char *vpath)
 {
-  return create_new_version_generic(vpath, 0, 1, 0, 0, 0);
+  return create_new_version_generic(vpath, SUBVERSION_NO, COPY_YES, 0, 0, 0);
 }
 
 /*
@@ -258,7 +243,7 @@ int create_new_version(const char *vpath)
  */
 int create_new_subversion(const char *vpath, mode_t mode, uid_t uid, gid_t gid)
 {
-  return create_new_version_generic(vpath, 1, 0, mode, uid, gid);
+  return create_new_version_generic(vpath, SUBVERSION_YES, COPY_NO, mode, uid, gid);
 }
 
 /*
@@ -297,7 +282,7 @@ int create_new_file(const char *vpath, mode_t mode, uid_t uid, gid_t gid, dev_t 
   if (!metadata)
     res = create_new_metadata(vpath, path, mode & 07777, uid, gid);
   else
-    res = create_new_version_generic(vpath, 0, 0, mode, uid, gid);
+    res = create_new_version_generic(vpath, SUBVERSION_NO, COPY_NO, mode, uid, gid);
 
   return res;
 }
@@ -330,7 +315,7 @@ int create_new_symlink(const char *dest, const char *vpath, uid_t uid, gid_t gid
   if (!metadata)
     res = create_new_metadata(vpath, realpath, S_IRWXU | S_IRWXG | S_IRWXO, uid, gid);
   else
-    res = create_new_version_generic(vpath, 0, 0, S_IRWXU | S_IRWXG | S_IRWXO, uid, gid);
+    res = create_new_version_generic(vpath, SUBVERSION_NO, COPY_NO, S_IRWXU | S_IRWXG | S_IRWXO, uid, gid);
   return res;
 }
 
@@ -359,7 +344,7 @@ int create_new_directory(const char *vpath, mode_t mode, uid_t uid, gid_t gid)
   if (!metadata)
     res = create_new_metadata(vpath, realpath, mode, uid, gid);
   else
-    res = create_new_version_generic(vpath, 0, 0, mode, uid, gid);
+    res = create_new_version_generic(vpath, SUBVERSION_NO, COPY_NO, mode, uid, gid);
   return res;
 }
 

@@ -57,7 +57,7 @@ int callback_setxattr(const char *path, const char *name, const char *value,
       	memcpy(local, value, size);
 
   		// Get the full path to the metadatafile
-  		char *mdfile=helper_create_meta_name(path, "metadata");
+  		char *mdfile=helper_build_meta_name(path, METADATA_PREFIX);
   		if (!mdfile)
     		return -ENOENT;
     		
@@ -179,7 +179,7 @@ int callback_setxattr(const char *path, const char *name, const char *value,
 	return -EACCES;
 
       /* Try to commit to disk */
-      dflfile = helper_create_meta_name(path, "dfl-meta");
+      dflfile = helper_build_meta_name(path, DFL_VERSION_PREFIX);
       if (write_default_file(dflfile, vid, svid) != 0)
 	{
 	  free(dflfile);

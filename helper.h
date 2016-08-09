@@ -53,6 +53,6 @@ char		*helper_read_line(FILE *fh);
 char		*helper_get_file_name(char *base, char *prefix);
 char		*helper_extract_filename(const char *path);
 char		*helper_extract_dirname(const char *path);
-char		*helper_create_meta_name(const char *vpath, char *prefix);
+char		*helper_build_meta_name(const char *vpath, char *prefix);
 
 #endif /* !HELPER_H */

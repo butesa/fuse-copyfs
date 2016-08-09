@@ -84,8 +84,6 @@ static int callback_readlink(const char *path, char *buf, size_t size)
   return 0;
 }
 
-#define METADATA_PREFIX "metadata."
-
 static int callback_getdir(const char *path, fuse_dirh_t h, fuse_dirfil_t fill)
 {
   struct dirent *entry;
@@ -112,7 +110,7 @@ static int callback_getdir(const char *path, fuse_dirh_t h, fuse_dirfil_t fill)
 	   * behind them, the '.' and '..' directories, so that the listing
 	   * looks reasonable.
 	   */
-	  if (!strcmp(entry->d_name, "metadata."))
+	  if (!strcmp(entry->d_name, METADATA_PREFIX))
 	    {
 	      /* This is the root's metadata, ignore it */
 	      continue;
@@ -183,7 +181,7 @@ static int callback_unlink(const char *path)
   if (S_ISDIR(st_rfile.st_mode))
     return -EISDIR;
   metadata->md_deleted = 1;
-  metafile = create_meta_name(metadata->md_vfile, "metadata");
+  metafile = helper_build_meta_name(metadata->md_vfile, METADATA_PREFIX);
   if (write_metadata_file(metafile, metadata) == -1) {
     free(metafile);
     return -errno;
@@ -227,7 +225,7 @@ static int callback_rmdir(const char *path)
        * behind them, the '.' and '..' directories, so that the listing
        * looks reasonable.
        */
-      if (!strcmp(entry->d_name, "metadata.")) {
+      if (!strcmp(entry->d_name, METADATA_PREFIX)) {
 	/* This is the root's metadata, ignore it */
 	continue;
       } else if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
@@ -262,7 +260,7 @@ static int callback_rmdir(const char *path)
   free(rpath);
 
   dir_metadata->md_deleted = 1;
-  metafile = create_meta_name(dir_metadata->md_vfile, "metadata");
+  metafile = helper_build_meta_name(dir_metadata->md_vfile, METADATA_PREFIX);
   if (write_metadata_file(metafile, dir_metadata) == -1) {
     free(metafile);
     return -errno;

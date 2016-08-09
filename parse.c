@@ -14,6 +14,7 @@
 
 #include "helper.h"
 #include "structs.h"
+#include "rcs.h"
 
 
 /*
@@ -186,7 +187,7 @@ metadata_t *parse_metadata_for_file(char *root, char *filename)
   metadata_t *metadata;
 
   /* Build the path for the metadata file */
-  metafile = helper_get_file_name(filename, "metadata");
+  metafile = helper_get_file_name(filename, METADATA_PREFIX);
   metapath = helper_build_composite("SS", "/", root, metafile);
   free(metafile);
 
@@ -200,7 +201,7 @@ metadata_t *parse_metadata_for_file(char *root, char *filename)
     }
 
   /* Build the path for the default version file */
-  dflfile = helper_get_file_name(filename, "dfl-meta");
+  dflfile = helper_get_file_name(filename, DFL_VERSION_PREFIX);
   dflpath = helper_build_composite("SS", "/", root, dflfile);
   free(dflfile);
 

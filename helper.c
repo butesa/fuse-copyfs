@@ -293,8 +293,8 @@ char *helper_get_file_name(char *base, char *prefix)
 {
   char *result;
 
-  result = safe_malloc(strlen(base) + strlen(prefix) + 2);
-  sprintf(result, "%s.%s", prefix, base);
+  result = safe_malloc(strlen(base) + strlen(prefix) + 1);
+  sprintf(result, "%s%s", prefix, base);
   return result;
 }
 
@@ -330,11 +330,11 @@ char *helper_extract_dirname(const char *path)
 
 /*
  * Build a metadata file name with the given virtual file and prefix.
- * prefix is "metadata" for metadata file and "dfl-meta" for default file.
+ * prefix is METADATA_PREFIX for metadata file and DFL_VERSION_PREFIX for default file.
  */
-char *helper_create_meta_name(const char *vpath, char *prefix)
+char *helper_build_meta_name(const char *vpath, char *prefix)
 {
-  char *dir, *file, *xlat, *name, *res;
+  char *dir, *file, *xlat, *res;
 
   dir = helper_extract_dirname(vpath);
   xlat = rcs_translate_path(dir, rcs_version_path);
@@ -344,10 +344,9 @@ char *helper_create_meta_name(const char *vpath, char *prefix)
     return NULL;
   }
   file = helper_extract_filename(vpath);
-  name = helper_build_composite("SS", ".", prefix, file);
-  res = helper_build_composite("SS", "/", xlat, name);
+  res = safe_malloc(strlen(xlat) + strlen(prefix) + strlen(file) + 2);
+  sprintf(res, "%s/%s%s", xlat, prefix, file);
   free(xlat);
-  free(name);
   free(file);
   free(dir);
   return res;
