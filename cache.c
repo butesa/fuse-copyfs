@@ -92,7 +92,7 @@ metadata_t *cache_get_metadata(const char *vpath)
       /* Reconnect it on top */
       metadata->md_previous = NULL;
       metadata->md_next = bucket->b_contents;
-      bucket->b_contents->md_previous = NULL;
+      bucket->b_contents->md_previous = metadata;
       bucket->b_contents = metadata;
     }
 
@@ -132,24 +132,24 @@ void cache_add_metadata(metadata_t *metadata)
     bucket->b_contents->md_previous = metadata;
   bucket->b_contents = metadata;
 
-  /* Bump the bucket's item counter, and the global counter */
+  /* Bump the global counter */
   cache_item_count++;
 }
 
 /*
- * Null out the bucket... This probably isn't a wonderful
- * way to do it, but it works, and I haven't thought of
- * anything more wonderful yet. -M@
+ * Remove file metadata from cache.
  */
-void cache_drop_metadata(const char *vpath)
+void cache_drop_metadata(metadata_t *metadata)
 {
-	bucket_t *bucket;
+  /* Disconnect it from the list */
+    if (metadata->md_previous)
+      metadata->md_previous->md_next = metadata->md_next;
+    if (metadata->md_next)
+      metadata->md_next->md_previous = metadata->md_previous;
+    
+  /* reduce the global counter */
+  cache_item_count++;
 
-  	/* Lookup the item */
-  	bucket = &cache_hash_table[CACHE_HASH(vpath)];
-  	// nuke it.
-	bucket->b_contents=NULL;
-	
 }
 
 /*

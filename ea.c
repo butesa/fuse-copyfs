@@ -50,105 +50,77 @@ int callback_setxattr(const char *path, const char *name, const char *value,
 
   if (!strcmp(name,"rcs.purge"))
   	{
-  		/*
-  		 * We've been asked to purge a file, let's do it..
-  		 * I don't profess this to be great C.. There may
-  		 * even be problems with it... It's working for me,
-  		 * and I use it on a very active directory tree 
-  		 * (my Eclipse development tree...). I do purges
-  		 * and whatnot frequently. Feel free to clean up
-  		 * as seen fit... I hate C. Please let me know of
-  		 * changes! --M@
-  		 */
-  		
-  		//The below is because value may not be nultermed... ugh
+  		/* Copy the value to NUL-terminate it */
   		char *local;
   		local = safe_malloc(size + 1);
       	local[size] = '\0';
       	memcpy(local, value, size);
 
-		// Get the raw path
-		char *rpath = rcs_translate_path(path, rcs_version_path);
-  		if (!rpath)
+  		// Get the full path to the metadatafile
+  		char *mdfile=helper_create_meta_name(path, "metadata");
+  		if (!mdfile)
     		return -ENOENT;
     		
-    	// Get the raw directory
-  		char *rfdir=helper_extract_dirname(rpath);
-  		// Get the original filename
-  		char *rfname=helper_extract_filename(path);	
-  	
-  		// Build the full path to the metadatafile
-  		char *mdfile=(char *)malloc((strlen(rfdir) + 1 + strlen("metadata.") + strlen(rfname) + 1)*sizeof(char));
-  		strcpy(mdfile,rfdir);
-  		strcat(mdfile,"/metadata.");
-  		strcat(mdfile,rfname);
-  		
-  		int c=0; // to count how many versions to delete
-
-
-		// Count the number of versions there are
-  		version = metadata->md_versions;
-  		version_t *v=version;
+  		int c=1; // how many versions to delete
   		int vnum=1; // number of versions
-  		while(v->v_next) { 
-  			v=v->v_next;
-  			vnum++; 
-  		}
-  		v=version; // reset
   		
   		if(!strcmp(local,"A")) {
   			// Delete them all
-  			c=vnum;
+  			// we don't have to count the versions
+  			// we just leave c and vnum at 1
   		} else {	 
   			// we have a number, so set c to it
   			c=atoi(local);
+  			
+  			// Count the number of versions there are
+	  		version = metadata->md_versions;
+	  		while(version->v_next) { 
+	  			version=version->v_next;
+	  			vnum++; 
+	  		}
   		}
   		
   		/* Let's do this... Crawl through the list, nulling
   		 * next's and unlinking files
   		 */
   		version_t *next;
+  		version = metadata->md_versions;
   		if(c >= vnum) {
   			// we're toasting them all...
-  			while(v) {			
+  			while(version) {
   				//unlink file.. scary!
-  				unlink(v->v_rfile);
+  				unlink(version->v_rfile);
   				
-  				next=v->v_next;
-  				v->v_next=NULL;
-  				v=next;
+  				next=version->v_next;
+  				version->v_next=NULL;
+  				version=next;
   			}
   			metadata->md_versions = NULL;
   		} else {
   			// cull
   			vnum-=c; // number of versions we want to _keep_.
-  			while(v) {
+  			while(version) {
   				if(vnum > 1) {
   					//next
   					vnum--;
-  					v=v->v_next;
+  					version=version->v_next;
   				} else {
   					//null the next, and nuke the next file
-  					next=v->v_next;
-  					v->v_next=NULL;
-  					v=next;
+  					next=version->v_next;
+  					version->v_next=NULL;
+  					version=next;
 
-  					if(v) {
+  					if(version) {
   						//unlink file.. scary!
-  						unlink(v->v_rfile);
+  						unlink(version->v_rfile);
   					}
   				}
   			}
-  			/* This isn't strictly necessary, but we've
-  			 * been mucking around in version a lot, so
-  			 * let's just do it.
-  			 */
-  			metadata->md_versions=version;
   		}
   		
   		if(metadata->md_versions == NULL) {
   			// Free the metadata from cache
-  			cache_drop_metadata(metadata->md_vfile);
+  			cache_drop_metadata(metadata);
   			rcs_free_metadata(metadata);
   			// kill the metadata file too.. SCARY!!!
   			unlink(mdfile);
@@ -161,7 +133,7 @@ int callback_setxattr(const char *path, const char *name, const char *value,
     			return -errno;
   			}
   		}
-  		//free(mdfile);
+  		free(mdfile);
 
   		return 0;
   		
@@ -188,16 +160,7 @@ int callback_setxattr(const char *path, const char *name, const char *value,
       free(local);
 
       /* Check if we actually have that version (or a compatible version) */
-      for (version = metadata->md_versions; version; version = version->v_next)
-	{
-	  if (vid == -1)
-	    break;
-	  if ((version->v_vid == (unsigned)vid) && (svid == -1))
-	    break;
-	  if ((version->v_vid == (unsigned)vid) &&
-	      (version->v_svid == (unsigned)svid))
-	    break;
-	}
+      version = rcs_find_version(metadata, vid, svid);
       if (!version)
 	return -EINVAL;
 
@@ -259,7 +222,12 @@ int callback_getxattr(const char *path, const char *name, char *value,
   if (!metadata)
     return -ENOENT;
 
-  if (!strcmp(name, "rcs.locked_version"))
+  if (!strcmp(name, "rcs.purge"))
+    {
+      /* This one is write-only */
+      return -EPERM;
+    }
+  else if (!strcmp(name, "rcs.locked_version"))
     {
       char buffer[64];
       int vid, svid;
@@ -323,7 +291,7 @@ int callback_getxattr(const char *path, const char *name, char *value,
 	  if (asprintf(&array[count], "%d:%d:%d:%d:%d:%lld:%ld",
 		       version->v_vid, version->v_svid,
 		       version->v_mode | st_data.st_mode, version->v_uid,
-		       version->v_gid, st_data.st_size, st_data.st_mtime) < 0)
+		       version->v_gid, (long long)st_data.st_size, st_data.st_mtime) < 0)
 	    {
 	      unsigned int i;
 
@@ -373,58 +341,34 @@ int callback_getxattr(const char *path, const char *name, char *value,
     }
 }
 
-#define ATTRIBUTE_STRING "rcs.locked_version\0rcs.metadata_dump"
-
 /*
  * List the supported extended attributes.
  */
 int callback_listxattr(const char *path, char *list, size_t size)
 {
-  char *rpath, *buffer;
-  unsigned int length;
+  char *rpath;
   int res;
+  
+  /* If we list our own attributes here, some programs will try to copy
+   * them when copying files. That won't work:
+   * - rcs.metadata_dump can't be copied, it is read-only
+   * - rcs.purge can't be copied, it ist write-only
+   * - rcs.locked_version CAN be copied, but this leads to unwantet results
+   * So we just pass the attributes of the underlying filesystem.
+   * 
+   * Maybe this isn't the best solution, but it's better than letting some
+   * programs fiddle around with file versions without knowing what they
+   * are doing.*/
 
   rpath = rcs_translate_path(path, rcs_version_path);
   if (!rpath)
     return -ENOENT;
 
-  /* We need to get the EAs of the real file, and mix our own */
-  res = llistxattr(path, NULL, 0);
+  /* Get the EAs of the real file */
+  res = llistxattr(rpath, list, size);
   if (res == -1)
-    {
-      /* Ignore errors, as many filesystems don't support EA */
-      length = 0;
-      buffer = safe_malloc(sizeof(ATTRIBUTE_STRING));
-    }
-  else
-    {
-      length = res;
-      buffer = safe_malloc(length + sizeof(ATTRIBUTE_STRING));
-      if (llistxattr(rpath, buffer, length) == -1)
-	{
-	  free(buffer);
-	  free(rpath);
-	  return -errno;
-	}
-    }
-
-  free(rpath);
-
-  /* Append ours to the buffer */
-  memcpy(buffer + length, ATTRIBUTE_STRING, sizeof(ATTRIBUTE_STRING));
-  length += sizeof(ATTRIBUTE_STRING);
-
-  /* Handle the EA protocol */
-  if (size == 0)
-    res = length;
-  else if (length > size)
-    res = -ERANGE;
-  else
-    {
-      memcpy(list, buffer, length);
-      res = length;
-    }
-  free(buffer);
+    res = -errno;
+  free (rpath);
   return res;
 }
 
@@ -434,7 +378,8 @@ int callback_listxattr(const char *path, char *list, size_t size)
 int callback_removexattr(const char *path, const char *name)
 {
   if (!strcmp(name, "rcs.locked_version") ||
-      !strcmp(name, "rcs.metadata_dump"))
+      !strcmp(name, "rcs.metadata_dump") ||
+      !strcmp(name, "rcs.purge"))
     {
       /* Our attributes can't be deleted */
       return -EPERM;

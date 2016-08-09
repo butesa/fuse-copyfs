@@ -340,12 +340,23 @@ static int callback_truncate(const char *path, off_t size)
     char *rpath;
     metadata_t *metadata;
 
-    if (create_new_version(path) == -1)
-      return -errno;
-
     rpath = rcs_translate_path(path, rcs_version_path);
+    if (!rpath)
+      return -ENOENT;
     metadata = cache_get_metadata(path);
-    metadata->md_timestamp = time(NULL);
+    
+    /* if no data was written to file since the creation of the latest
+     * version, we don't have to create a new version */
+    if (metadata->md_has_clean_version) {
+      /* this is the first time the current version is actually modified
+       * set timestamp to now */
+      metadata->md_timestamp = time(NULL);
+      metadata->md_has_clean_version = 0;
+    } else {
+      if (create_new_version(path) == -1)
+        return -errno;
+    }
+
     res = truncate(rpath, size);
     if(res == -1)
       return -errno;
@@ -377,10 +388,20 @@ static int callback_open(const char *path, int flags)
 {
   char *rpath;
   int res;
+  metadata_t *metadata;
 
   if ((flags & O_WRONLY) || (flags & O_RDWR)) {
-    if (create_new_version(path) == -1)
-      return -errno;
+    /* if no data was written to file since the creation of the latest
+     * version, we don't have to create a new version */
+    metadata = rcs_translate_to_metadata(path, rcs_version_path);
+    if (!metadata)
+      return -ENOENT;
+    if (!metadata->md_has_clean_version)
+    {
+      if (create_new_version(path) == -1)
+        return -errno;
+      metadata->md_has_clean_version = 1;
+	}
   }
 
   rpath = rcs_translate_path(path, rcs_version_path);
@@ -418,6 +439,17 @@ static int callback_write(const char *path, const char *buf, size_t size,
   int fd;
   int res;
   char *rpath;
+  metadata_t *metadata;
+  
+  metadata = rcs_translate_to_metadata(path, rcs_version_path);
+  if (!metadata)
+    return -ENOENT;
+  if (metadata->md_has_clean_version) {
+    /* this is the first time the current version is actually written to
+     * set timestamp to now */
+    metadata->md_timestamp = time(NULL);
+    metadata->md_has_clean_version = 0;
+  }
 
   rpath = rcs_translate_path(path, rcs_version_path);
   fd = open(rpath, O_WRONLY);

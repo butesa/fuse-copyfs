@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <time.h>
+#include <utime.h>
 
 #include "helper.h"
 #include "structs.h"
@@ -157,7 +158,10 @@ static int create_new_version_generic(const char *vpath, int subversion,
   version = safe_malloc(sizeof(version_t));
   if (subversion)
     {
-      /* If we have a locked version, we have to bump the real version */
+      /* If we have a locked version, the current file content differs
+       * from the file content of the latest version. Since we keep the
+       * current file content, we can't just add a new subversion to the
+       * latest version. We have to bump the real version */
       if (current->v_vid != metadata->md_versions->v_vid)
 	{
 	  version->v_vid = metadata->md_versions->v_vid + 1;
@@ -177,7 +181,7 @@ static int create_new_version_generic(const char *vpath, int subversion,
     {
       version->v_vid = metadata->md_versions->v_vid + 1;
       version->v_svid = 0;
-      version->v_mode = current->v_mode & 07777;
+      version->v_mode = (do_copy ? current->v_mode : mode) & 07777;
       version->v_uid = do_copy ? current->v_uid : uid;
       version->v_gid = do_copy ? current->v_gid : gid;
       version->v_rfile = create_version_name(vpath, version->v_vid);
@@ -195,6 +199,9 @@ static int create_new_version_generic(const char *vpath, int subversion,
     {
       free(version->v_rfile);
       free(version);
+    } else {
+      /* Update timestamp */
+      metadata->md_timestamp = time(NULL);
     }
 
   return result;
@@ -215,6 +222,7 @@ static int create_new_metadata(const char *vpath, char *rpath, mode_t mode, uid_
   metadata->md_vpath = helper_split_to_array(vpath, '/');
   metadata->md_deleted = 0;
   metadata->md_timestamp = time(NULL);
+  metadata->md_has_clean_version = 0;
   metadata->md_dfl_vid = LATEST;
   metadata->md_dfl_svid = LATEST;
   version = safe_malloc(sizeof (version_t));
@@ -291,11 +299,6 @@ int create_new_file(const char *vpath, mode_t mode, uid_t uid, gid_t gid, dev_t 
   else
     res = create_new_version_generic(vpath, 0, 0, mode, uid, gid);
 
-  /* Update timestamp */
-  metadata = rcs_translate_to_metadata(vpath, rcs_version_path);
-  if (metadata)
-    metadata->md_timestamp = time(NULL);
-
   return res;
 }
 
@@ -367,6 +370,7 @@ int create_new_directory(const char *vpath, mode_t mode, uid_t uid, gid_t gid)
 int create_copy_file(const char *source, const char *target)
 {
   struct stat src_stat;
+  struct utimbuf puttime;
 
   if (lstat(source, &src_stat) == -1)
     return -1;
@@ -383,12 +387,12 @@ int create_copy_file(const char *source, const char *target)
     int src, dst;
     int rsize;
     char buf[1024];
-    if ((src = open(source, O_RDONLY)) == -1) {
-      close(dst);
+    if ((src = open(source, O_RDONLY)) == -1)
       return -4;
-    }
-    if ((dst = creat(target, src_stat.st_mode)) == -1)
+    if ((dst = creat(target, src_stat.st_mode)) == -1) {
+      close(src);
       return -5;
+    }
     while ((rsize = read(src, buf, 1024))) {
       if (rsize == -1 && errno == EINTR)
 	continue ;
@@ -409,5 +413,12 @@ int create_copy_file(const char *source, const char *target)
   } else {
     return -8;
   }
+
+  /* The version has changed, but the file content is still the same.
+   * So let's keep the file times. */
+  puttime.modtime = src_stat.st_mtime;
+  puttime.actime = src_stat.st_atime;
+  utime(target, &puttime);
+  
   return 0;
 }

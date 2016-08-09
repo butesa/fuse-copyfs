@@ -131,6 +131,9 @@ metadata_t *parse_metadata_file(char *metafile)
 
   /* Never touched */
   md_info->md_timestamp = 0;
+  
+  /* We don't know about clean versions, so let's asume FALSE */
+  md_info->md_has_clean_version = 0;
 
   /* Default version is latest (it will be replaced later if needed) */
   md_info->md_dfl_vid = LATEST;

@@ -43,6 +43,8 @@ struct				metadata_t
   int				md_dfl_vid;	/* Default version	*/
   int				md_dfl_svid;	/* Default subversion	*/
   time_t			md_timestamp;	/* Mod. begin		*/
+  int				md_has_clean_version;	/* Tells us if any file content
+  * was written to latest version */
 
   metadata_t			*md_next;	/* Next file in bucket	*/
   metadata_t			*md_previous;	/* Previous "		*/

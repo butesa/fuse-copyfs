@@ -23,13 +23,14 @@ int rcs_ignore_deleted = 0;
 
 /*
  * Find a given version in a metadata set. If vid is LATEST, retrieves the
- * absolute latest version. If svid is LATEST and vid is not, retrieves the
+ * current default version. If svid is LATEST and vid is not, retrieves the
  * latest subversion of that version, that is the latest revision of the
  * metadata.
  */
 version_t *rcs_find_version(metadata_t *metadata, int vid, int svid)
 {
   version_t *version;
+  int find_dfl_version = 0;
 
   version = metadata->md_versions;
 
@@ -55,6 +56,7 @@ version_t *rcs_find_version(metadata_t *metadata, int vid, int svid)
 	{
 	  vid = metadata->md_dfl_vid;
 	  svid = metadata->md_dfl_svid;
+	  find_dfl_version = 1;
 	}
     }
   while (version && (version->v_vid > (unsigned)vid))
@@ -66,7 +68,7 @@ version_t *rcs_find_version(metadata_t *metadata, int vid, int svid)
        * If a default version makes no sense anymore, just use the real
        * latest and ignore the default.
        */
-      if (metadata->md_dfl_vid != LATEST)
+      if (find_dfl_version)
 	return metadata->md_versions;
 
       /* No such version */
@@ -87,7 +89,7 @@ version_t *rcs_find_version(metadata_t *metadata, int vid, int svid)
        * If the "default" version does not exist anymore, use the real
        * default (it should never happen anyway)
        */
-      if (metadata->md_dfl_vid != LATEST)
+      if (find_dfl_version)
 	return metadata->md_versions;
 
       /* This subversion does not exist */

@@ -337,8 +337,13 @@ char *helper_create_meta_name(const char *vpath, char *prefix)
   char *dir, *file, *xlat, *name, *res;
 
   dir = helper_extract_dirname(vpath);
-  file = helper_extract_filename(vpath);
   xlat = rcs_translate_path(dir, rcs_version_path);
+  if (!xlat) {
+    free(dir);
+    free(xlat);
+    return NULL;
+  }
+  file = helper_extract_filename(vpath);
   name = helper_build_composite("SS", ".", prefix, file);
   res = helper_build_composite("SS", "/", xlat, name);
   free(xlat);
