@@ -141,14 +141,22 @@ void cache_add_metadata(metadata_t *metadata)
  */
 void cache_drop_metadata(metadata_t *metadata)
 {
+  bucket_t *bucket;
+  
   /* Disconnect it from the list */
     if (metadata->md_previous)
       metadata->md_previous->md_next = metadata->md_next;
+    else {
+      /* This is the first entry in the list, we need to update the bucket */
+      bucket = &cache_hash_table[CACHE_HASH(metadata->md_vfile)];
+      bucket->b_contents = metadata->md_next;
+    }
+    
     if (metadata->md_next)
       metadata->md_next->md_previous = metadata->md_previous;
     
   /* reduce the global counter */
-  cache_item_count++;
+  cache_item_count--;
 
 }
 

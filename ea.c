@@ -90,42 +90,46 @@ int callback_setxattr(const char *path, const char *name, const char *value,
   			while(version) {
   				//unlink file.. scary!
   				unlink(version->v_rfile);
-  				
-  				next=version->v_next;
-  				version->v_next=NULL;
-  				version=next;
+  				/* No need to clean up version data.
+  				 * This is done later by rcs_free_metadata */
+  				version=version->v_next;
   			}
-  			metadata->md_versions = NULL;
+  			
+  			// Free the metadata from cache
+  			cache_drop_metadata(metadata);
+  			rcs_free_metadata(metadata);
+  			
+  			// kill the metadata file too.. SCARY!!!
+  			unlink(mdfile);
   		} else {
   			// cull
   			vnum-=c; // number of versions we want to _keep_.
   			while(version) {
   				if(vnum > 1) {
-  					//next
+  					// we want to keep this version
   					vnum--;
   					version=version->v_next;
-  				} else {
-  					//null the next, and nuke the next file
+				}
+  				else if (vnum == 1) {
+					// this is the last version to keep
+					vnum--;
+					next=version->v_next;
+		  			version->v_next = NULL;
+					version=next;
+				}
+  				else {
+  					//delete this version
+  					
+					//unlink file.. scary!
+					unlink(version->v_rfile);
+					
   					next=version->v_next;
-  					version->v_next=NULL;
+					free(version->v_rfile);
+					free(version);
   					version=next;
-
-  					if(version) {
-  						//unlink file.. scary!
-  						unlink(version->v_rfile);
-  					}
   				}
   			}
-  		}
-  		
-  		if(metadata->md_versions == NULL) {
-  			// Free the metadata from cache
-  			cache_drop_metadata(metadata);
-  			rcs_free_metadata(metadata);
-  			// kill the metadata file too.. SCARY!!!
-  			unlink(mdfile);
   			
-  		} else {
   			// We've made changes to the metadata, and got at least one
   			// version left.. need to update it
   			if (write_metadata_file(mdfile, metadata) == -1) {
@@ -133,8 +137,8 @@ int callback_setxattr(const char *path, const char *name, const char *value,
     			return -errno;
   			}
   		}
+  		
   		free(mdfile);
-
   		return 0;
   		
   	}
