@@ -278,10 +278,91 @@ static int callback_symlink(const char *from, const char *to)
 static int callback_rename(const char *from, const char *to)
 {
   /*
-   * Not suppored, because there is always a fallback path, and we don't
-   * version moves per se, so just let the calling program do the move
-   * "manually".
+   * We could simply return EXDEV, which means renaming ist not possible
+   * because source and destination are on different file systems.
+   * The calling program will then fall back to copy+delete.
+   * However, when source and destination are in the same directory, EXDEV
+   * makes no sense and not all programs can handle it.
+   * 
    */
+   
+  char *vdir_from;
+  char *vdir_to;
+  int same_dir;
+  
+  // Check if source and destination are in the same directory
+  vdir_from = helper_extract_dirname(from);
+  vdir_to = helper_extract_dirname(to);
+  same_dir = (strcmp(vdir_from, vdir_to) == 0);
+  free(vdir_from);
+  free(vdir_to);
+   
+  if (same_dir) {
+    metadata_t *metadata_from;
+    version_t *version_from;
+    struct stat st_rfile_from;
+    char *metafile_from;
+    char *rpath_to;
+    int result;
+  
+    metadata_from = rcs_translate_to_metadata(from, rcs_version_path);
+    if (!metadata_from || metadata_from->md_deleted)
+      return -ENOENT;
+    version_from = rcs_find_version(metadata_from, LATEST, LATEST);
+
+    // Check if source is a regular file or symlink
+    // For other types, copying is not implemented yet
+    if (lstat(version_from->v_rfile, &st_rfile_from) == -1)
+      return -errno;
+    if (S_ISREG(st_rfile_from.st_mode) || S_ISLNK(st_rfile_from.st_mode)) {
+      if (S_ISREG(st_rfile_from.st_mode)) {
+        result = create_new_file(to, st_rfile_from.st_mode, st_rfile_from.st_uid,
+          st_rfile_from.st_gid, st_rfile_from.st_rdev);
+        if (result == -EEXIST) {
+          // renaming to an existing file will overwrite that file
+          result = create_new_version_generic(to, SUBVERSION_NO, COPY_NO,
+          st_rfile_from.st_mode, st_rfile_from.st_uid, st_rfile_from.st_gid);
+        }
+        if (result)
+          return result;
+        rpath_to = rcs_translate_path(to, rcs_version_path); 
+        result = create_copy_file(version_from->v_rfile, rpath_to);
+        free(rpath_to);
+        if (result)
+          return result;
+      }
+      else /* if (S_ISLNK(st_rfile_from.st_mode)) */ {
+        char lnk[1024];
+        int lnk_size;
+        if ((lnk_size = readlink(version_from->v_rfile, lnk, 1023)) == -1)
+          return -2;
+        lnk[lnk_size] = '\0';
+        result = create_new_symlink(lnk, to, st_rfile_from.st_uid, st_rfile_from.st_uid);
+        if (result == -EEXIST) {
+          // renaming to an existing file will overwrite that file
+          result = create_new_version_generic(to, SUBVERSION_NO, COPY_NO,
+          st_rfile_from.st_mode, st_rfile_from.st_uid, st_rfile_from.st_gid);
+          if (result)
+            return result;
+          rpath_to = rcs_translate_path(to, rcs_version_path); 
+          result = create_copy_file(version_from->v_rfile, rpath_to);
+        }
+        if (result)
+          return result;
+      }
+      
+      // Delete old file
+      metadata_from->md_deleted = 1;
+      metafile_from = helper_build_meta_name(metadata_from->md_vfile, METADATA_PREFIX);
+      if (write_metadata_file(metafile_from, metadata_from) == -1) {
+        free(metafile_from);
+        return -errno;
+      }
+      free(metafile_from);
+      return 0;
+    }
+  }
+  
   (void)from;
   (void)to;
   return -EXDEV;

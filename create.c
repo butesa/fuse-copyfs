@@ -106,12 +106,8 @@ static int create_link_version(metadata_t *metadata, version_t *version)
  * If subversion is set, it will create a subversion with the given attributes.
  * Else it will create a version. It won't work for initial version creation.
  */
-#define COPY_YES 1
-#define COPY_NO 0
-#define SUBVERSION_YES 1
-#define SUBVERSION_NO 0
 
-static int create_new_version_generic(const char *vpath, int subversion,
+int create_new_version_generic(const char *vpath, int subversion,
 				      int do_copy, mode_t mode, uid_t uid,
 				      gid_t gid)
 {
