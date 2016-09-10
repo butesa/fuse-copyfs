@@ -85,6 +85,7 @@ sub get_ea($$)
     my ($output, $error);
     my $cmd;
 
+    ($file, $name) = prepare_ea_name($file, $name);
     $cmd = "getfattr --absolute-names -h -n '$name' --only-values -- '$file'";
     ($output, $error) = run_command($cmd);
     $error =~ s/^getfattr: // if $error;
@@ -100,10 +101,32 @@ sub set_ea($$$)
     my ($output, $error);
     my $cmd;
 
+    ($file, $name) = prepare_ea_name($file, $name);
     $cmd = "setfattr -h -n '$name' -v '$value' -- '$file'";
     ($output, $error) = run_command($cmd);
     $error =~ s/^setfattr: // if $error;
     return ($output, $error);
+}
+
+#
+# append name of deleted files to ea property name
+#
+sub prepare_ea_name($$)
+{
+    my ($file, $name) = @_;
+    my $append = "";
+    
+    while (! -e $file && $file ne ".")
+    {
+        $append = basename($file)."/".$append;
+        $file = dirname($file);
+    }
+    
+    if (length($append) != 0)
+    {
+        $name = $name . ":" . substr($append, 0, -1);
+    }
+    return ($file, $name);
 }
 
 #
@@ -125,9 +148,18 @@ sub get_current_version($)
 sub set_current_version($$$)
 {
     my ($file, $vid, $svid) = @_;
-
-    my ($value, $error) = set_ea($file, "rcs.locked_version", "$vid.$svid");
-    die "$0: $error" if $error;
+    
+    if ($vid == 0) {
+        # Version 0 is used internally to mark a file as deleted
+        if (-d $file) {
+            rmdir($file) or die "$0: $!";
+        } else {
+            unlink($file) or die "$0: $!";
+        }
+    } else {
+        my (undef, $error) = set_ea($file, "rcs.locked_version", "$vid.$svid");
+        die "$0: $error" if $error;
+    }
 }
 
 #
@@ -223,7 +255,11 @@ sub dump_versions($)
     # Put what we want to print into an array:
     my @dumplines;
 
-	push(@dumplines, "File $file ('*' is active) :\n");
+    if ($cvid == 0) {
+        push(@dumplines, "File $file (file is deleted) :\n");
+    } else {
+        push(@dumplines, "File $file ('*' is active) :\n");
+    }
 
     # Explode the attributes
     my @versions = reverse(split(/\|/, $value));

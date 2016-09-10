@@ -35,194 +35,41 @@
  * 						   copies of - or all of - a file.
  */
 
-/*
- * Set the value of an extended attribute.
- */
-int callback_setxattr(const char *path, const char *name, const char *value,
-		      size_t size, int flags)
+static void ea_prepare_data(const char *path_in, const char *name_in, char **path_out, char **name_out)
 {
-  metadata_t *metadata;
-  version_t *version;
-	
-  metadata = rcs_translate_to_metadata(path, rcs_version_path);
-  if (!metadata)
-    return -ENOENT;
-
-  if (!strcmp(name,"rcs.purge"))
-  	{
-  		/* Copy the value to NUL-terminate it */
-  		char *local;
-  		local = safe_malloc(size + 1);
-      	local[size] = '\0';
-      	memcpy(local, value, size);
-
-  		// Get the full path to the metadatafile
-  		char *mdfile=helper_build_meta_name(path, METADATA_PREFIX);
-  		if (!mdfile)
-    		return -ENOENT;
-    		
-  		int c=1; // how many versions to delete
-  		int vnum=1; // number of versions
-  		
-  		if(!strcmp(local,"A")) {
-  			// Delete them all
-  			// we don't have to count the versions
-  			// we just leave c and vnum at 1
-  		} else {	 
-  			// we have a number, so set c to it
-  			c=atoi(local);
-  			
-  			// Count the number of versions there are
-	  		version = metadata->md_versions;
-	  		while(version->v_next) { 
-	  			version=version->v_next;
-	  			vnum++; 
-	  		}
-  		}
-  		
-  		/* Let's do this... Crawl through the list, nulling
-  		 * next's and unlinking files
-  		 */
-  		version_t *next;
-  		version = metadata->md_versions;
-  		if(c >= vnum) {
-  			// we're toasting them all...
-  			while(version) {
-  				//unlink file.. scary!
-  				unlink(version->v_rfile);
-  				/* No need to clean up version data.
-  				 * This is done later by rcs_free_metadata */
-  				version=version->v_next;
-  			}
-  			
-  			// Free the metadata from cache
-  			cache_drop_metadata(metadata);
-  			rcs_free_metadata(metadata);
-  			
-  			// kill the metadata file too.. SCARY!!!
-  			unlink(mdfile);
-  		} else {
-  			// cull
-  			vnum-=c; // number of versions we want to _keep_.
-  			while(version) {
-  				if(vnum > 1) {
-  					// we want to keep this version
-  					vnum--;
-  					version=version->v_next;
-				}
-  				else if (vnum == 1) {
-					// this is the last version to keep
-					vnum--;
-					next=version->v_next;
-		  			version->v_next = NULL;
-					version=next;
-				}
-  				else {
-  					//delete this version
-  					
-					//unlink file.. scary!
-					unlink(version->v_rfile);
-					
-  					next=version->v_next;
-					free(version->v_rfile);
-					free(version);
-  					version=next;
-  				}
-  			}
-  			
-  			// We've made changes to the metadata, and got at least one
-  			// version left.. need to update it
-  			if (write_metadata_file(mdfile, metadata) == -1) {
-    			free(mdfile);
-    			return -errno;
-  			}
-  		}
-  		
-  		free(mdfile);
-  		return 0;
-  		
-  	}
-  else if (!strcmp(name, "rcs.locked_version"))
-    {
-      struct fuse_context *context;
-      unsigned int length;
-      int vid, svid;
-      char *dflfile, *local;
-
-      /* Copy the value to NUL-terminate it */
-      local = safe_malloc(size + 1);
-      local[size] = '\0';
-      memcpy(local, value, size);
-
-      vid = 0; svid = 0;
-      if ((sscanf(local, "%d.%d%n", &vid, &svid, &length) != 2) ||
-	  (length != size))
-	{
-	  free(local);
-	  return -EINVAL;
-	}
-      free(local);
-
-      /* Check if we actually have that version (or a compatible version) */
-      version = rcs_find_version(metadata, vid, svid);
-      if (!version)
-	return -EINVAL;
-
-      /*
-       * Only allow a user to change the version if the new version has the
-       * same owner as the one requesting the change, or if the user is root,
-       * to prevent curious users from resurrecting versions with too lax
-       * permissions.
-       */
-      context = fuse_get_context();
-      if ((context->uid != 0) && (context->uid != version->v_uid))
-	return -EACCES;
-
-      /* Try to commit to disk */
-      dflfile = helper_build_meta_name(path, DFL_VERSION_PREFIX);
-      if (write_default_file(dflfile, vid, svid) != 0)
-	{
-	  free(dflfile);
-	  return -errno;
-	}
-      free(dflfile);
-
-      /* If ok, change in RAM */
-      metadata->md_dfl_vid = vid;
-      metadata->md_dfl_svid = svid;
-
-      return 0;
+  char *pos;
+  pos = strchr(name_in, ':');
+  if (!pos) {
+    *path_out = safe_strdup(path_in);
+    *name_out = safe_strdup(name_in);
+  }
+  else {
+    *name_out = safe_malloc(pos - name_in + 1);
+    memcpy(*name_out, name_in, pos - name_in);
+    (*name_out)[pos - name_in] = '\0';
+    
+    if (path_in[strlen(path_in)-1] == '/') {
+      *path_out = safe_malloc(strlen(path_in) + strlen(pos + 1) + 1);
+      strcpy(*path_out, path_in);
+      strcpy(*path_out + strlen(path_in), pos + 1);
     }
-  else if (!strcmp(name, "rcs.metadata_dump"))
-    {
-      /* This one is read-only */
-      return -EPERM;
+    else {
+      *path_out = safe_malloc(strlen(path_in) + strlen(pos + 1) + 2);
+      strcpy(*path_out, path_in);
+      (*path_out)[strlen(path_in)] = '/';
+      strcpy(*path_out + strlen(path_in) + 1, pos + 1);
     }
-  else
-    {
-      int res;
-
-      /* Pass those through */
-      version = rcs_find_version(metadata, LATEST, LATEST);
-      if (!version)
-	return -ENOENT;
-      res = lsetxattr(version->v_rfile, name, value, size, flags);
-      if (res == -1)
-	return -errno;
-      return 0;
-    }
+  }
 }
 
-/*
- * Get the value of an extended attribute.
- */
-int callback_getxattr(const char *path, const char *name, char *value,
-		      size_t size)
+int ea_getxattr_rcs(const char *path, const char *name, char *value, size_t size)
 {
   metadata_t *metadata;
   version_t *version;
-
+  
+  rcs_ignore_deleted = 1;
   metadata = rcs_translate_to_metadata(path, rcs_version_path);
+  rcs_ignore_deleted = 0;
   if (!metadata)
     return -ENOENT;
 
@@ -235,26 +82,33 @@ int callback_getxattr(const char *path, const char *name, char *value,
     {
       char buffer[64];
       int vid, svid;
-
-      if (metadata->md_dfl_vid == -1)
-	{
-	  vid = metadata->md_versions->v_vid;
-	  svid = metadata->md_versions->v_svid;
-	}
+      
+      if (metadata->md_deleted)
+      {
+        strcpy(buffer, "0.0");
+      }
       else
-	{
-	  vid = metadata->md_dfl_vid;
-	  svid = metadata->md_dfl_svid;
-	}
-
-      /* Get the version number */
-      snprintf(buffer, 64, "%i.%i", vid, svid);
+      {
+        if (metadata->md_dfl_vid == -1)
+          {
+            vid = metadata->md_versions->v_vid;
+            svid = metadata->md_versions->v_svid;
+          }
+        else
+          {
+            vid = metadata->md_dfl_vid;
+            svid = metadata->md_dfl_svid;
+          }
+  
+        /* Get the version number */
+        snprintf(buffer, 64, "%i.%i", vid, svid);
+      }
 
       /* Handle the EA protocol */
       if (size == 0)
-	return strlen(buffer);
+        return strlen(buffer);
       if (strlen(buffer) > size)
-	return -ERANGE;
+        return -ERANGE;
       strcpy(value, buffer);
       return strlen(buffer);
     }
@@ -272,42 +126,42 @@ int callback_getxattr(const char *path, const char *name, char *value,
        */
 
       for (count = 0, version = metadata->md_versions; version;
-	   version = version->v_next)
-	count++;
+        version = version->v_next)
+        count++;
       array = safe_malloc(sizeof(char *) * (count + 1));
       memset(array, 0, sizeof(char *) * (count + 1));
 
       /* Traverse the version list and build the individual strings */
       for (count = 0, version = metadata->md_versions; version;
-	   version = version->v_next)
-	{
-	  struct stat st_data;
-
-	  /* stat() the real file, but just ignore failures (bad version ?) */
-	  if (lstat(version->v_rfile, &st_data) < 0)
-	    {
-	      st_data.st_mode = S_IFREG;
-	      st_data.st_mtime = -1;
-	    }
-	  else
-	    st_data.st_mode &= ~07777;
-
-	  if (asprintf(&array[count], "%d:%d:%d:%d:%d:%lld:%ld",
-		       version->v_vid, version->v_svid,
-		       version->v_mode | st_data.st_mode, version->v_uid,
-		       version->v_gid, (long long)st_data.st_size, st_data.st_mtime) < 0)
-	    {
-	      unsigned int i;
-
-	      /* Free everything if it failed */
-	      for (i = 0; i < count; i++)
-		free(array[i]);
-	      free(array);
-	      return -ENOMEM;
-	    }
-
-	  count++;
-	}
+        version = version->v_next)
+        {
+          struct stat st_data;
+      
+          /* stat() the real file, but just ignore failures (bad version ?) */
+          if (lstat(version->v_rfile, &st_data) < 0)
+            {
+              st_data.st_mode = S_IFREG;
+              st_data.st_mtime = -1;
+            }
+          else
+            st_data.st_mode &= ~07777;
+      
+          if (asprintf(&array[count], "%d:%d:%d:%d:%d:%lld:%ld",
+            version->v_vid, version->v_svid,
+            version->v_mode | st_data.st_mode, version->v_uid,
+            version->v_gid, (long long)st_data.st_size, st_data.st_mtime) < 0)
+            {
+              unsigned int i;
+      
+              /* Free everything if it failed */
+              for (i = 0; i < count; i++)
+                free(array[i]);
+              free(array);
+              return -ENOMEM;
+            }
+      
+          count++;
+        }
 
       /* Build the final string */
       result = helper_build_composite("A", "|", array);
@@ -316,31 +170,286 @@ int callback_getxattr(const char *path, const char *name, char *value,
       /* Handle the EA protocol */
 
       if (size == 0)
-	res = strlen(result);
+        res = strlen(result);
       else if (strlen(result) > size)
-	res = -ERANGE;
+        res = -ERANGE;
       else
-	{
-	  strcpy(value, result);
-	  res = strlen(result);
-	}
+        {
+          strcpy(value, result);
+          res = strlen(result);
+        }
       free(result);
       return res;
     }
   else
     {
-      int res;
+      /* unknown rcs.*-attribute */
+      return -EPERM;
+    }
+}
 
+int ea_setxattr_rcs(const char *path, const char *name, const char *value, size_t size)
+{
+  metadata_t *metadata;
+  version_t *version;
+  
+  rcs_ignore_deleted = 1;
+  metadata = rcs_translate_to_metadata(path, rcs_version_path);
+  rcs_ignore_deleted = 0;
+  if (!metadata)
+    return -ENOENT;
+
+  if (!strcmp(name,"rcs.purge"))
+    {
+      /* Copy the value to NUL-terminate it */
+      char *local;
+      local = safe_malloc(size + 1);
+      local[size] = '\0';
+      memcpy(local, value, size);
+
+      // Get the full path to the metadatafile
+      char *mdfile=helper_build_meta_name(path, METADATA_PREFIX);
+      if (!mdfile)
+        return -ENOENT;
+        
+      int c=1; // how many versions to delete
+      int vnum=1; // number of versions
+      
+      if(!strcmp(local,"A")) {
+        // Delete them all
+        // we don't have to count the versions
+        // we just leave c and vnum at 1
+      } else {
+        // we have a number, so set c to it
+        c=atoi(local);
+        
+        // Count the number of versions there are
+        version = metadata->md_versions;
+        while(version->v_next) { 
+          version=version->v_next;
+          vnum++; 
+        }
+      }
+      
+      /* Let's do this... Crawl through the list, nulling
+       * next's and unlinking files
+       */
+      version_t *next;
+      version = metadata->md_versions;
+      if(c >= vnum) {
+        // we're toasting them all...
+        while(version) {
+          //unlink file.. scary!
+          unlink(version->v_rfile);
+          /* No need to clean up version data.
+           * This is done later by rcs_free_metadata */
+          version=version->v_next;
+        }
+        
+        // Free the metadata from cache
+        cache_drop_metadata(metadata);
+        rcs_free_metadata(metadata);
+        
+        // kill the metadata file too.. SCARY!!!
+        unlink(mdfile);
+      } else {
+        // cull
+        vnum-=c; // number of versions we want to _keep_.
+        while(version) {
+          if(vnum > 1) {
+            // we want to keep this version
+            vnum--;
+            version=version->v_next;
+        }
+          else if (vnum == 1) {
+          // this is the last version to keep
+          vnum--;
+          next=version->v_next;
+            version->v_next = NULL;
+          version=next;
+        }
+          else {
+            //delete this version
+            
+          //unlink file.. scary!
+          unlink(version->v_rfile);
+          
+            next=version->v_next;
+          free(version->v_rfile);
+          free(version);
+            version=next;
+          }
+        }
+        
+        // We've made changes to the metadata, and got at least one
+        // version left.. need to update it
+        if (write_metadata_file(mdfile, metadata) == -1) {
+          free(mdfile);
+          return -errno;
+        }
+      }
+      
+      free(mdfile);
+      return 0;
+      
+    }
+  else if (!strcmp(name, "rcs.locked_version"))
+    {
+      struct fuse_context *context;
+      unsigned int length;
+      int vid, svid;
+      char *dflfile, *metafile, *local;
+
+      /* Copy the value to NUL-terminate it */
+      local = safe_malloc(size + 1);
+      local[size] = '\0';
+      memcpy(local, value, size);
+
+      vid = 0; svid = 0;
+      if ((sscanf(local, "%d.%d%n", &vid, &svid, &length) != 2) ||
+        (length != size))
+        {
+          free(local);
+          return -EINVAL;
+        }
+      free(local);
+
+      /* Check if we actually have that version (or a compatible version) */
+      version = rcs_find_version(metadata, vid, svid);
+      if (!version)
+        return -EINVAL;
+
+      /*
+       * Only allow a user to change the version if the new version has the
+       * same owner as the one requesting the change, or if the user is root,
+       * to prevent curious users from resurrecting versions with too lax
+       * permissions.
+       */
+      context = fuse_get_context();
+      if ((context->uid != 0) && (context->uid != version->v_uid))
+        return -EACCES;
+
+      /* Try to commit to disk */
+      dflfile = helper_build_meta_name(path, DFL_VERSION_PREFIX);
+      if (write_default_file(dflfile, vid, svid) != 0)
+        {
+          free(dflfile);
+          return -errno;
+        }
+      free(dflfile);
+      
+      /* If ok, change in RAM */
+      metadata->md_dfl_vid = vid;
+      metadata->md_dfl_svid = svid;
+      
+      /* remove deletion flag from metadata*/
+      if (metadata->md_deleted)
+      {
+        metadata->md_deleted = 0;
+        metafile = helper_build_meta_name(path, METADATA_PREFIX);
+        if (write_metadata_file(metafile, metadata) != 0)
+        {
+          free(metafile);
+          return -errno;
+        }
+        free(metafile);
+      }
+
+      return 0;
+    }
+  else if (!strcmp(name, "rcs.metadata_dump"))
+    {
+      /* This one is read-only */
+      return -EPERM;
+    }
+  else
+    {
+      /* unknown rcs.*-attribute */
+      return -EPERM;
+    }
+}
+
+
+
+/*
+ * Set the value of an extended attribute.
+ */
+int callback_setxattr(const char *path, const char *name, const char *value,
+  size_t size, int flags)
+{
+  if (!strncmp(name, "rcs.", 4))
+    {
+      char *name_new, *path_new;
+      int res;
+      
+      ea_prepare_data(path, name, &path_new, &name_new);
+      res = ea_setxattr_rcs(path_new, name_new, value, size);
+      
+      free(path_new);
+      free(name_new); 
+      
+      return res;
+    }
+  else
+    {
+      int res;
+      metadata_t *metadata;
+      version_t *version;
+      
+      metadata = rcs_translate_to_metadata(path, rcs_version_path);
+      if (!metadata)
+        return -ENOENT;
+  
+      /* Pass those through */
+      version = rcs_find_version(metadata, LATEST, LATEST);
+      if (!version)
+        return -ENOENT;
+      res = lsetxattr(version->v_rfile, name, value, size, flags);
+      if (res == -1)
+        return -errno;
+      return 0;
+    }
+}
+
+/*
+ * Get the value of an extended attribute.
+ */
+int callback_getxattr(const char *path, const char *name, char *value,
+  size_t size)
+{
+  if (!strncmp(name, "rcs.", 4))
+    {
+      char *name_new, *path_new;
+      int res;
+      
+      ea_prepare_data(path, name, &path_new, &name_new);
+      res = ea_getxattr_rcs(path_new, name_new, value, size);
+    
+      free(path_new);
+      free(name_new); 
+      
+      return res;
+    }
+  else
+    {
+      int res;
+      metadata_t *metadata;
+      version_t *version;
+      
+      metadata = rcs_translate_to_metadata(path, rcs_version_path);
+      if (!metadata)
+        return -ENOENT;
+      
       /*
        * We are not interested in those, simply forward them to the real
        * filesystem.
        */
       version = rcs_find_version(metadata, LATEST, LATEST);
       if (!version)
-	return -ENOENT;
+        return -ENOENT;
       res = lgetxattr(version->v_rfile, name, value, size);
       if (res == -1)
-	return -errno;
+        return -errno;
       return res;
     }
 }
