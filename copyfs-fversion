@@ -12,7 +12,6 @@ use File::Basename;
 use File::stat;
 
 use Algorithm::Diff qw(diff);
-use Time::HiRes qw(sleep);
 
 use Errno;
 
@@ -359,17 +358,19 @@ sub restore_tag_file($$)
 sub get_diff($$$$$) {
 		my($file,$v1,$v2,$v3,$v4)=@_;
 		
-		# Test for textyness
-		unless(-T $file) {
-			print STDERR "I will not diff binary files\n";
-			return(1);
-		}
-
 		# Preserve the current version
 		($MAJOR,$MINOR)=get_current_version($file);
 		
 		# Set the version to the first version
 		set_current_version($file,$v1,$v2);
+		
+		# Test for textyness
+		unless(-T $file) {
+			print STDERR "Version $v1.$v2 is not a text file. I will only diff text files.\n";
+			set_current_version($file,$MAJOR,$MINOR);
+			return(1);
+		}
+		
 		# Get the file
 		if(!open(TFA,"<$file")) {
 			# Balk, reset version, and bail
@@ -381,7 +382,15 @@ sub get_diff($$$$$) {
 		close TFA;
 
 		# Set the version to the second version
-		set_current_version($file,$v3,$v4); 
+		set_current_version($file,$v3,$v4);
+		
+		# Test for textyness
+		unless(-T $file) {
+			print STDERR "Version $v3.$v4 is not a text file. I will only diff text files.\n";
+			set_current_version($file,$MAJOR,$MINOR);
+			return(1);
+		}
+		
 		# Get the file
 		if(!open(TFB,"<$file")) {
 			# Balk, reset version, and bail
@@ -422,12 +431,6 @@ sub get_diff($$$$$) {
 sub grep_versions($$) {
 	my($file,$pattern)=@_;
 	
-	# Test for textyness
-	unless(-T $file) {
-		print STDERR "I will not diff binary files\n";
-		return(1);
-	}
-		
 	# This statement doesn't really matter, because CopyFS is unithreaded, YAY!!!
 	# But we'll say it anyhow because, well, people suck and probably will break it anyhow.
 	print "Do not mess with this file... search in progress...\n";
@@ -448,12 +451,18 @@ sub grep_versions($$) {
 		$vers =~ s/^v//;
 		my($maj,$min)=split(/\./,$vers);
 		set_current_version($file,$maj,$min);
-		sleep(0.10); # we need to sleep here so there is enough time for set_current_version
-					 # to kick in. This will limit performance substantially... Oh well, it's
-					 # what we have to do. Because we're doing subsecond sleeps, this requires
-					 # the Time::HiRes function.
-		open(DF,"<$file") or die "Problem reading $maj.$min.. aborting\n";
-		# note, the above die is safe because we're trapping dies, because we forsaw this.
+		
+		# Test for textyness
+		unless(-T $file) {
+			print STDERR "Version $maj.$min is not a text file. Skipping...\n";
+			next;
+		}
+		
+		if (!open(DF,"<$file")) {
+			print STDERR "Problem reading $maj.$min. Skipping...\n";
+			next;
+		}
+		
 		while(<DF>) {
 			if(/$pattern/) {
 				chomp;
