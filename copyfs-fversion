@@ -201,11 +201,11 @@ sub get_perms($)
     $result .= (($mode & S_ISGID) ? (($mode & S_IXGRP) ? "s" : "S") :
 		(($mode & S_IXGRP) ? "x" : "-"));
 
-    # Mode for group
+    # Mode for other
     $result .= (($mode & S_IROTH) ? "r" : "-");
     $result .= (($mode & S_IWOTH) ? "w" : "-");
     $result .= (($mode & S_ISVTX) ? (($mode & S_IXOTH) ? "t" : "T") :
-		(($mode & S_IXGRP) ? "x" : "-"));
+		(($mode & S_IXOTH) ? "x" : "-"));
 
     return $result;
 }
