@@ -12,6 +12,8 @@
 # include <stdio.h>
 # include <sys/types.h>
 
+#include "structs.h"
+
 # define LINE_BUFFER_STEP	1024
 
 
@@ -40,6 +42,8 @@ char		*helper_strdup(const char *str, char *file, int line,
 
 char		**helper_split_to_array(const char *string, char separator);
 void		helper_free_array(char **array);
+void		helper_free_string_list(string_list_t *list);
+size_t		helper_compose_string_list(char **composed, const string_list_t *list, const char delimiter);
 int		helper_array_has_prefix(char **longest, char **shortest);
 char		*helper_build_composite(char *format, char *separator, ...);
 

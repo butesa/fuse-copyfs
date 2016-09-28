@@ -281,6 +281,46 @@ sub dump_versions($)
 }
 
 #
+# Dump the file list of a directory.
+#
+sub dump_dir($)
+{
+    my $file = shift;
+
+    # Get the attribute
+    my ($value, $error) = get_ea($file, "rcs.list_dir");
+    die "$0: $error" if $error;
+    
+    # Put what we want to print into a hash:
+    my %dumplines;
+
+    # Explode the attributes
+    my @files = split(/\0/, $value);
+    foreach my $fstring (@files)
+    {
+        my ($vid, $svid, $mode, $uid, $gid, $size,
+            $mtime, $name) = split(/:/, $fstring, 8);
+    
+        my $fline;
+        if ($vid == 0)
+        {
+            $fline=sprintf("  deleted                                                                       %s",
+                $name);
+        }
+        else
+        {
+            $fline=sprintf("  v%-4.4s : %s  %-8.8s %-8.8s %10i %s %s", "$vid.$svid",
+               get_perms($mode), dump_owner($uid), dump_group($gid),
+               $size, strftime("%c", localtime($mtime)), $name);
+        }
+        $fline .= "\n";
+        $dumplines{$name}=$fline;
+    }
+    # return values ordered by file name
+    return map {$dumplines{$_}} sort keys %dumplines;
+}
+
+#
 # Generate the tag data for a directory
 #
 sub generate_tag_file_for_directory
@@ -523,11 +563,11 @@ $0 = basename($0);
 my %options = ();
 
 # Parse command line
-getopts("p:G:ghl:rst:d:u:", \%options);
+getopts("p:G:ghl:rsct:d:u:", \%options);
 
 if ($options{h})
 {
-    printf("Usage: $0 [-h] [-r] [-s] [-l version] [-g] [-d v1,v2] [-G string] [-p n|A] file\n");
+    printf("Usage: $0 [-h] [-r] [-s] [-l version] [-g] [-c] [-d v1,v2] [-G string] [-p n|A] file\n");
     printf("\n");
     printf("  -h           Show this help\n");
 
@@ -536,6 +576,7 @@ if ($options{h})
     printf("  -s           Show the versions for this file (default)\n");
     printf("  -g           Get the version number in use\n");
     printf("  -l version   Lock this version\n");
+    printf("  -c           Show directory content\n");
     # Added by M@
     printf("  -d v1,v2     Show the diff of two versions\n");
     printf("  -G string    Search all versions of a file for a string\n");
@@ -556,7 +597,7 @@ if (scalar(@ARGV) != 1)
 
 # Show by default
 $options{s} = 1
-    if (!$options{r} && !$options{g} && !$options{s} && !$options{l} &&
+    if (!$options{r} && !$options{g} && !$options{s} && !$options{l} && !$options{c} &&
 	!$options{t} && !$options{u} && !$options{d} && !$options{p} && !$options{G});
 
 if ($options{r})
@@ -575,6 +616,12 @@ if ($options{g})
 if ($options{s})
 {
     print dump_versions($ARGV[0]);
+    exit(0);
+}
+
+if ($options{c})
+{
+    print dump_dir($ARGV[0]);
     exit(0);
 }
 

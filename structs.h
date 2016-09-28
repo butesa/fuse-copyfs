@@ -19,6 +19,7 @@
 typedef struct version_t	version_t;
 typedef struct metadata_t	metadata_t;
 typedef struct bucket_t		bucket_t;
+typedef struct string_list_t		string_list_t;
 
 struct				version_t
 {
@@ -53,6 +54,12 @@ struct				metadata_t
 struct				bucket_t
 {
   metadata_t			*b_contents;	/* Metadata chain	*/
+};
+
+struct				string_list_t
+{
+  char			*sl_data;
+  string_list_t	*sl_next;
 };
 
 #endif /* !STRUCTS_H */

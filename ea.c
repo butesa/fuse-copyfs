@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <fuse.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #include "helper.h"
 #include "structs.h"
@@ -177,6 +178,130 @@ int ea_getxattr_rcs(const char *path, const char *name, char *value, size_t size
         {
           strcpy(value, result);
           res = strlen(result);
+        }
+      free(result);
+      return res;
+    }
+  else if (!strcmp(name, "rcs.list_dir"))
+    {
+      struct dirent *entry;
+      int res;
+      DIR *dir;
+      char *result;
+      size_t result_size;
+      string_list_t *file_list;
+      string_list_t **file_list_ptr;
+    
+      file_list = NULL;
+      file_list_ptr = &file_list;
+
+      rcs_ignore_deleted = 1;
+      version = rcs_find_version(metadata, LATEST, LATEST);
+      rcs_ignore_deleted = 0;
+      
+      dir = opendir(version->v_rfile);
+      if (!dir)
+        {
+          return -errno;
+        }      
+    
+      /* Find the metadata files */
+      while ((entry = readdir(dir)))
+        {
+          /*
+           * We want the metadata files (because a versioned file is
+           * behind them)
+           */
+          if (!strcmp(entry->d_name, METADATA_PREFIX))
+            {
+              /* This is the root's metadata, ignore it */
+              continue;
+            }
+          else if (!strncmp(entry->d_name, METADATA_PREFIX,
+                strlen(METADATA_PREFIX)))
+            {
+              char *file;
+              metadata_t *file_metadata;
+              int len;
+      
+              if (strcmp(path, "/"))
+                file = helper_build_composite("SS", "/", path,
+                  entry->d_name + strlen(METADATA_PREFIX));
+              else
+                file = helper_build_composite("-S", "/", entry->d_name +
+                  strlen(METADATA_PREFIX));
+              rcs_ignore_deleted = 1;
+              file_metadata = rcs_translate_to_metadata(file, rcs_version_path);
+              rcs_ignore_deleted = 0;
+              free(file);
+              if (!file_metadata)
+                {
+                  closedir(dir);
+                  return -ENOENT;
+                }
+              
+              *file_list_ptr = safe_malloc(sizeof(string_list_t));
+              memset(*file_list_ptr, 0, sizeof(string_list_t));
+              
+              if (file_metadata->md_deleted)
+                len = asprintf(&(*file_list_ptr)->sl_data, "0:0:0:0:0:0:0:%s",
+                  entry->d_name + strlen(METADATA_PREFIX));
+              else
+                {
+                  version_t *file_version;
+                  struct stat st_data;
+                  
+                  file_version = rcs_find_version(file_metadata, LATEST, LATEST);
+                  if (!file_version)
+                    {
+                      helper_free_string_list(file_list);
+                      closedir(dir);
+                      return -ENOENT;
+                    }
+                    
+                  /* stat() the real file, but just ignore failures (bad version ?) */
+                  if (lstat(file_version->v_rfile, &st_data) < 0)
+                    {
+                      st_data.st_mode = S_IFREG;
+                      st_data.st_mtime = -1;
+                    }
+                  else
+                    st_data.st_mode &= ~07777;
+          
+                  len = asprintf(&(*file_list_ptr)->sl_data, "%d:%d:%d:%d:%d:%lld:%ld:%s",
+                    file_version->v_vid, file_version->v_svid,
+                    file_version->v_mode | st_data.st_mode, file_version->v_uid,
+                    file_version->v_gid, (long long)st_data.st_size, st_data.st_mtime,
+                    entry->d_name + strlen(METADATA_PREFIX));
+                }
+              if (len < 0)
+                {
+                  /* Free everything if it failed */
+                  helper_free_string_list(file_list);
+                  closedir(dir);
+                  return -ENOMEM;
+                }
+              
+              file_list_ptr = &(*file_list_ptr)->sl_next;
+            }
+        }
+    
+      closedir(dir);
+
+      /* Build the final string */
+      result_size = helper_compose_string_list(&result, file_list, '\0');
+      helper_free_string_list(file_list);
+
+      /* Handle the EA protocol */
+
+      if (size == 0)
+        res = result_size;
+      else if (result_size > size)
+        res = -ERANGE;
+      else
+        {
+          memcpy(value, result, result_size);
+          res = result_size;
         }
       free(result);
       return res;

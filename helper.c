@@ -14,6 +14,7 @@
 
 #include "helper.h"
 #include "rcs.h"
+#include "structs.h"
 
 
 /*
@@ -138,6 +139,73 @@ void helper_free_array(char **array)
   for (i = 0; array[i]; i++)
     free(array[i]);
   free(array);
+}
+
+/*
+ * Combine all elements of a string list to a single string.
+ */
+size_t helper_compose_string_list(char **composed, const string_list_t *list, const char delimiter)
+{
+  const string_list_t *current;
+  size_t length = 0;
+  
+  current = list;
+  
+  // calculate size of result
+  while (current)
+  {
+    if (current->sl_data)
+      length += strlen(current->sl_data) + 1;
+    current = current->sl_next;
+  }
+  
+  if (length == 0)
+  {
+    // string list is empty
+    *composed = safe_malloc(1);
+    **composed = '\0';
+    return 0;
+  }
+  else
+  {
+    char *pos;
+    
+    *composed = safe_malloc(length);
+    pos = *composed;
+    current = list;
+    
+    while (current)
+    {
+      if (current->sl_data)
+      {
+        strcpy(pos, current->sl_data);
+        pos += strlen(current->sl_data);
+        *pos = delimiter;
+        pos++;
+      }
+      current = current->sl_next;
+    }
+    // replace last delimiter with \0
+    *(pos-1) = '\0';
+    
+    return length-1;
+  }
+}
+
+/*
+ * Free a string list.
+ */
+void helper_free_string_list(string_list_t *list)
+{
+  string_list_t *next;
+  
+  while (list)
+  {
+    next = list->sl_next;
+    free(list->sl_data);
+    free(list);
+    list = next;
+  }
 }
 
 /*
