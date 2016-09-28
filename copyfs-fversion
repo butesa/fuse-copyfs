@@ -157,6 +157,11 @@ sub set_current_version($$$)
             unlink($file) or die "$0: $!";
         }
     } else {
+        if (! -d dirname($file))
+        {
+            print STDERR "$0: Can't set version. Parent directory does not exist.\n";
+            exit(1);
+        }
         my (undef, $error) = set_ea($file, "rcs.locked_version", "$vid.$svid");
         die "$0: $error" if $error;
     }

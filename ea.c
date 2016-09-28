@@ -456,7 +456,12 @@ int ea_setxattr_rcs(const char *path, const char *name, const char *value, size_
 
       /* Try to commit to disk */
       dflfile = helper_build_meta_name(path, DFL_VERSION_PREFIX);
-      if (write_default_file(dflfile, vid, svid) != 0)
+      if (dflfile == NULL)
+        {
+          /* This happens if parent directiory is deleted */
+          return -ENOENT;
+        }
+      else if (write_default_file(dflfile, vid, svid) != 0)
         {
           free(dflfile);
           return -errno;
