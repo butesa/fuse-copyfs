@@ -127,8 +127,12 @@ int create_new_version_generic(const char *vpath, int subversion,
   /* Return to normal behavior */
   rcs_ignore_deleted = 0;
 
-  /* Check timestamp in order not to create bogus new versions */
-  if (time(NULL) - metadata->md_timestamp < TIME_LIMIT)
+  /* Check timestamp in order not to create bogus new versions
+   * Ignore timestamp if file is deleted, because we can't reuse the
+   * current version in that case
+   * TODO: If the new version has the same filetype as the latest existing
+   * version, we could simply set md_deleted to 0 and reuse that version*/
+  if (!metadata->md_deleted && time(NULL) - metadata->md_timestamp < TIME_LIMIT)
     return 0;
 
   /* Can't create a subversion from a deleted file */
