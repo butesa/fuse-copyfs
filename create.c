@@ -323,6 +323,7 @@ int create_new_directory(const char *vpath, mode_t mode, uid_t uid, gid_t gid)
 {
   char *realpath;
   metadata_t *metadata;
+  version_t *version_dir;
   int res;
 
   /* check if an older version existed */
@@ -331,20 +332,66 @@ int create_new_directory(const char *vpath, mode_t mode, uid_t uid, gid_t gid)
   rcs_ignore_deleted = 0;
   if (metadata && !metadata->md_deleted)
     return -EEXIST;
-  if (!metadata)
-    realpath = create_version_name(vpath, 1);
+  
+  /* We try to find and reuse an existing realpath instead of creating
+   * a new one. This makes it easier to manage deleted files */
+  version_dir = metadata ? rcs_find_last_dir_version(metadata, NULL) : NULL;
+    
+  if (version_dir)
+    realpath = safe_strdup(version_dir->v_rfile);
   else
-    realpath = create_version_name(vpath, metadata->md_versions->v_vid + 1);
-  /* FIXME: */
-  if (mkdir(realpath, 0700) == -1) {
-    free(realpath);
-    return -errno;
-  }
+    {
+      if (!metadata)
+        realpath = create_version_name(vpath, 1);
+      else
+        realpath = create_version_name(vpath, metadata->md_versions->v_vid + 1);
+      /* FIXME: */
+      if (mkdir(realpath, 0700) == -1)
+        {
+          free(realpath);
+          return -errno;
+        }
+    }
+    
   /* FIXME: the owned should be the same as the parent if suid */
   if (!metadata)
     res = create_new_metadata(vpath, realpath, mode, uid, gid);
   else
-    res = create_new_version_generic(vpath, SUBVERSION_NO, COPY_NO, mode, uid, gid);
+    {
+      /* FIXME: The following code is copy-pasted from create_new_version_generic.
+       * It would be better to call that function instead, but we need to
+       * use our own realpath. */
+      version_t *version_new;
+            
+      /* Create a new version in memory */
+      version_new = safe_malloc(sizeof(version_t));
+      if (version_dir && version_dir->v_vid == metadata->md_versions->v_vid)
+        {
+          version_new->v_vid = metadata->md_versions->v_vid;
+          version_new->v_svid = metadata->md_versions->v_svid+1;
+        }
+      else
+        {
+          version_new->v_vid = metadata->md_versions->v_vid+1;
+          version_new->v_svid = 0;
+        }
+      version_new->v_mode = mode & 07777;
+      version_new->v_uid = uid;
+      version_new->v_gid = gid;
+      version_new->v_rfile = realpath;
+      version_new->v_next = NULL;
+    
+      res = create_link_version(metadata, version_new);
+      if (res)
+        {
+          free(realpath);
+          free(version_new);
+        } else {
+          /* Update timestamp */
+          metadata->md_timestamp = time(NULL);
+        }
+    }
+        
   return res;
 }
 

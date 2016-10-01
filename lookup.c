@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 #include "helper.h"
 #include "structs.h"
@@ -97,6 +99,45 @@ version_t *rcs_find_version(metadata_t *metadata, int vid, int svid)
     }
 
   return version;
+}
+
+/*
+ * Find the latest directory version in a metadata set.
+ */
+version_t *rcs_find_last_dir_version(metadata_t *metadata, char *path)
+{
+  version_t *version;
+  struct stat st_rfile;
+  int res;
+
+  version = metadata->md_versions;
+  while (version)
+    {
+      if (path)
+      {
+        /*
+         * Sometimes, v_rfile contains only the filename and no path
+         * In this case, we need to prepend the path
+         * 
+         * FIXME: Move rcs_fixup_metadata_paths from path translation
+         * to metadata parsing, so we don't have to do the prepending here
+         */ 
+        char *rfile;
+        rfile = helper_build_composite("SS", "/", path, version->v_rfile);
+        res = lstat(rfile, &st_rfile);
+        free(rfile);
+      }
+      else
+        res = lstat(version->v_rfile, &st_rfile);
+      if (res == -1)
+        return NULL;
+      if (S_ISDIR(st_rfile.st_mode))
+        return version;
+      version = version->v_next;
+    }
+  
+  /* no directory version found */
+  return NULL;
 }
 
 /*
@@ -199,7 +240,12 @@ char *rcs_translate_path(const char *virtual, char *vroot)
   base = cache_find_maximal_match(elements, &metadata);
   if (base > 0)
     {
-      version = rcs_find_version(metadata, LATEST, LATEST);
+      /* search for directory version if we haven't reached the end of
+       * elements yet */
+      if (elements[base])
+        version = rcs_find_last_dir_version(metadata, NULL);
+      else
+        version = rcs_find_version(metadata, LATEST, LATEST);
       if (!version)
 	{
 	  helper_free_array(elements);
@@ -223,7 +269,12 @@ char *rcs_translate_path(const char *virtual, char *vroot)
 	  helper_free_array(elements);
 	  return NULL;
 	}
-      version = rcs_find_version(metadata, LATEST, LATEST);
+      /* search for directory version if we haven't reached the end of
+       * elements yet */
+      if (elements[i+1])
+        version = rcs_find_last_dir_version(metadata, path);
+      else
+        version = rcs_find_version(metadata, LATEST, LATEST);
       if (!version)
 	{
 	  helper_free_array(elements);

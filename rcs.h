@@ -18,6 +18,7 @@ extern char	*rcs_version_path;
 extern int	rcs_ignore_deleted;
 
 version_t	*rcs_find_version(metadata_t *metadata, int vid, int svid);
+version_t	*rcs_find_last_dir_version(metadata_t *metadata, char *path);
 char		*rcs_translate_path(const char *virtual, char *vroot);
 metadata_t	*rcs_translate_to_metadata(const char *vfile, char *vroot);
 
